@@ -30,6 +30,8 @@ pub async fn handle_message(
             if let Ok(command) = Command::parse(text, "") {
                 info!("Command received: {:?} from {}", command, msg.chat.id);
                 return handle_command(bot, msg, command, config, db).await;
+            } else {
+                // TODO: пересылка сообщения
             }
         }
     }
@@ -75,19 +77,35 @@ pub async fn handle_message(
     Ok(())
 }
 
+macro_rules! ok_or_tg {
+    ($prerequisite:expr, $bot: ident, $source_msg: ident, $text: literal) => {
+        {
+            let tmp = || async {
+                let result = $prerequisite.ok_or_else( || async {
+                    let _ = $bot.send_message($source_msg.chat.id, $text).await;
+                    anyhow!($text)
+                });
+                match result {
+                    Ok(val) => Ok(val),
+                    Err(err) => Err(err.await)
+                }
+            };
+            tmp().await
+        }
+    };
+}
+
 async fn handle_command(
     bot: Bot,
     msg: Message,
     command: Command,
-    config: Arc<Config>,
+    _: Arc<Config>,
     db: Arc<Database>,
 ) -> anyhow::Result<()> {
     let user = msg.from().ok_or_else(|| anyhow!("Missing user information"))?;
 
-    let reply_msg = msg.reply_to_message()
-        .ok_or_else(|| anyhow!("Ответьте на сообщение пользователя"))?;
-    let target_user = reply_msg.forward_from()
-        .ok_or_else(|| anyhow!("Не удалось определить пользователя"))?;
+    let reply_msg = ok_or_tg!(msg.reply_to_message(), bot, msg, "Ответьте на сообщение пользователя")?;
+    let target_user = ok_or_tg!(reply_msg.forward_from(), bot, msg, "Не удалось определить пользователя")?;
 
     match command {
         Command::Who => {
@@ -103,23 +121,25 @@ async fn handle_command(
             if let teloxide::types::ForwardedFrom::User(target_user) = target_user {
                 let text = msg.text().unwrap_or_default();
                 let parts: Vec<&str> = text.split_whitespace().collect();
-                
+
                 if parts.len() < 2 {
                     bot.send_message(msg.chat.id, "ℹ️ Формат команды: /ban <время> [m/h/d] или /ban permanent")
                         .await?;
                     return Ok(());
                 }
-                
+
                 let duration = parse_duration(text)?;
-                db.ban_user(target_user.id.0 as i64, duration).await?;
-                
+                db.ban_user(target_user.id.0 as i64, duration).await.unwrap_or_else(|error| {
+                    let _ = bot.send_message(msg.chat.id, error.to_string());
+                });
+
                 let message = match duration {
                     Some(d) => format!("⏳ Пользователь {} заблокирован на {} минут", 
                                       target_user.first_name, d.as_secs() / 60),
                     None => format!("🔒 Пользователь {} заблокирован навсегда", 
                                    target_user.first_name),
                 };
-                
+
                 info!("Banned user {}: {}", target_user.id, message);
                 bot.send_message(msg.chat.id, message).await?;
             }
@@ -128,9 +148,12 @@ async fn handle_command(
             if let teloxide::types::ForwardedFrom::User(target_user) = target_user {
                 db.unban_user(target_user.id.0 as i64).await?;
                 info!("Unbanned user {}", target_user.id);
-                bot.send_message(msg.chat.id, format!("🔓 Пользователь {} разблокирован", 
+                let result = bot.send_message(msg.chat.id, format!("🔓 Пользователь {} разблокирован", 
                                                      target_user.first_name))
-                    .await?;
+                    .await;
+                if let Err(error) = result {
+                    let _ = bot.send_message(msg.chat.id, error.to_string());
+                }
             }
         }
     }
