@@ -25,6 +25,7 @@ pub async fn handle_message(
     db: Arc<Database>,
     limits: Arc<RateLimits>,
 ) -> anyhow::Result<()> {
+    bot.send_message(msg.chat.id, msg.chat.id.to_string()).await?;
     if msg.chat.id == ChatId(config.target_chat_id) {
         if let Some(text) = msg.text() {
             if let Ok(command) = Command::parse(text, "") {

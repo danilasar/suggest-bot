@@ -39,8 +39,7 @@ impl Database {
         .bind(user_id)
         .bind(now)
         .fetch_optional(&self.pool)
-        .await
-        .context("Failed to check ban status")?;
+        .await?;
         Ok(result.is_some())
     }
 
