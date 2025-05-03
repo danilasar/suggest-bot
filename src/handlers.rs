@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context};
 use governor::clock::Clock;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use teloxide::types::ParseMode;
-use log::{warn, debug, info};
+use log::{error, warn, debug, info};
 use super::{Config, db::Database, RateLimits, utils::parse_duration};
 
 #[derive(BotCommands, Clone, Debug)]
@@ -26,13 +26,11 @@ pub async fn handle_message(
     limits: Arc<RateLimits>,
 ) -> anyhow::Result<()> {
     if msg.chat.id == ChatId(config.target_chat_id) {
-        if let Some(text) = msg.text() {
-            if let Ok(command) = Command::parse(text, "") {
-                info!("Command received: {:?} from {}", command, msg.chat.id);
-                return handle_command(bot, msg, command, config, db).await;
-            } else {
-                // TODO: пересылка сообщения
-            }
+        if let Ok(command) = Command::parse(msg.text().unwrap_or_default(), "") {
+           info!("Command received: {:?} from {}", command, msg.chat.id);
+            return handle_command(bot, msg, command, config, db).await;
+        } else {
+           return handle_reply_to_forwarded_message(bot, msg).await;
         }
     }
 
@@ -158,5 +156,29 @@ async fn handle_command(
         }
     }
 
+    Ok(())
+}
+
+
+async fn handle_reply_to_forwarded_message(
+    bot: Bot,
+    msg: Message
+) -> anyhow::Result<()> {
+    info!("Обработка ответа в целевом чате {}", msg.chat.id);
+    if let Some(reply_msg) = msg.reply_to_message() {
+        if let Some(teloxide::types::ForwardedFrom::User(target_user)) = reply_msg.forward_from() {
+            info!("Отправка ответа пользователю {}", target_user.id);
+            match bot.copy_message(target_user.id, msg.chat.id, msg.id).await {
+                Ok(_) => info!("Сообщение скопировано успешно"),
+                Err(e) => {
+                    error!("Ошибка копирования: {}", e);
+                    bot.send_message(target_user.id, "Тип сообщения не поддерживается. Постараюсь отправить текст из него.").await?;
+                    if let Some(text) = msg.text() {
+                        bot.send_message(target_user.id, text).await?;
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
