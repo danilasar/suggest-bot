@@ -25,7 +25,6 @@ pub async fn handle_message(
     db: Arc<Database>,
     limits: Arc<RateLimits>,
 ) -> anyhow::Result<()> {
-    bot.send_message(msg.chat.id, msg.chat.id.to_string()).await?;
     if msg.chat.id == ChatId(config.target_chat_id) {
         if let Some(text) = msg.text() {
             if let Ok(command) = Command::parse(text, "") {
@@ -84,11 +83,6 @@ async fn handle_command(
     db: Arc<Database>,
 ) -> anyhow::Result<()> {
     let user = msg.from().ok_or_else(|| anyhow!("Missing user information"))?;
-    if !config.is_admin(user.id.0 as i64) {
-        warn!("Unauthorized access attempt by {}", user.id);
-        bot.send_message(msg.chat.id, "⛔ Недостаточно прав").await?;
-        return Ok(());
-    }
 
     let reply_msg = msg.reply_to_message()
         .ok_or_else(|| anyhow!("Ответьте на сообщение пользователя"))?;

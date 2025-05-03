@@ -14,23 +14,13 @@ use log::{info, error};
 
 pub(crate) struct Config {
     target_chat_id: i64,
-    admin_ids: Vec<i64>,
 }
 
 impl Config {
     fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
             target_chat_id: std::env::var("TARGET_CHAT_ID")?.parse()?,
-            admin_ids: std::env::var("ADMIN_IDS")
-                .unwrap_or_default()
-                .split(',')
-                .filter_map(|s| s.trim().parse().ok())
-                .collect(),
         })
-    }
-
-    fn is_admin(&self, user_id: i64) -> bool {
-        self.admin_ids.contains(&user_id)
     }
 }
 
