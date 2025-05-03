@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS bans (
+    user_id INTEGER PRIMARY KEY,
+    duration INTEGER NOT NULL,
+    until_time INTEGER NOT NULL
+);
